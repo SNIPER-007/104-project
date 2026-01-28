@@ -6,7 +6,7 @@ function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const currentRef = useRef(null); // Live hand data
+  const currentRef = useRef(null); // Live landmarks
   const [template, setTemplate] = useState(null); // Saved gesture
   const [result, setResult] = useState("");
 
@@ -38,6 +38,17 @@ function App() {
     camera.start();
   }, []);
 
+  // Normalize landmarks (position invariant)
+  function normalize(landmarks) {
+    const base = landmarks[0]; // Wrist
+
+    return landmarks.map((p) => ({
+      x: p.x - base.x,
+      y: p.y - base.y,
+      z: p.z - base.z,
+    }));
+  }
+
   function onResults(results) {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -55,7 +66,7 @@ function App() {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       const landmarks = results.multiHandLandmarks[0];
 
-      // Store live hand in ref (NO re-render)
+      // Store live hand
       currentRef.current = landmarks;
 
       // Draw points
@@ -77,7 +88,10 @@ function App() {
       return;
     }
 
-    setTemplate([...currentRef.current]); // Copy array
+    // Normalize before saving
+    const norm = normalize(currentRef.current);
+
+    setTemplate(norm);
     setResult("Template Saved ✅");
   }
 
@@ -95,15 +109,19 @@ function App() {
       return;
     }
 
+    // Normalize live hand
+    const normCurrent = normalize(currentRef.current);
+
     let total = 0;
 
     for (let i = 0; i < 21; i++) {
-      total += distance(template[i], currentRef.current[i]);
+      total += distance(template[i], normCurrent[i]);
     }
 
     const avg = total / 21;
 
-    if (avg < 0.05) {
+    // Flexible threshold
+    if (avg < 0.12) {
       setResult("Correct Gesture ✅");
     } else {
       setResult("Try Again ❌");
@@ -124,7 +142,9 @@ function App() {
       />
 
       <div style={{ marginTop: "20px" }}>
-        <button onClick={saveTemplate}>Save Gesture</button>
+        <button onClick={saveTemplate}>
+          Save Gesture
+        </button>
 
         <button
           onClick={checkGesture}
