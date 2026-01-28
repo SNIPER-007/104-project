@@ -1,10 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Hands } from "@mediapipe/hands";
 import { Camera } from "@mediapipe/camera_utils";
 
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+
+  const currentRef = useRef(null); // Live hand data
+  const [template, setTemplate] = useState(null); // Saved gesture
+  const [result, setResult] = useState("");
 
   useEffect(() => {
     const hands = new Hands({
@@ -23,7 +27,9 @@ function App() {
 
     const camera = new Camera(videoRef.current, {
       onFrame: async () => {
-        await hands.send({ image: videoRef.current });
+        if (videoRef.current) {
+          await hands.send({ image: videoRef.current });
+        }
       },
       width: 640,
       height: 480,
@@ -46,38 +52,89 @@ function App() {
       canvas.height
     );
 
-    if (results.multiHandLandmarks) {
-      for (const landmarks of results.multiHandLandmarks) {
-        for (let i = 0; i < landmarks.length; i++) {
-          const x = landmarks[i].x * canvas.width;
-          const y = landmarks[i].y * canvas.height;
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      const landmarks = results.multiHandLandmarks[0];
 
-          ctx.beginPath();
-          ctx.arc(x, y, 5, 0, 2 * Math.PI);
-          ctx.fillStyle = "red";
-          ctx.fill();
-        }
+      // Store live hand in ref (NO re-render)
+      currentRef.current = landmarks;
+
+      // Draw points
+      for (let i = 0; i < landmarks.length; i++) {
+        const x = landmarks[i].x * canvas.width;
+        const y = landmarks[i].y * canvas.height;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = "red";
+        ctx.fill();
       }
+    }
+  }
+
+  function saveTemplate() {
+    if (!currentRef.current) {
+      alert("No hand detected!");
+      return;
+    }
+
+    setTemplate([...currentRef.current]); // Copy array
+    setResult("Template Saved ✅");
+  }
+
+  function distance(p1, p2) {
+    return Math.sqrt(
+      Math.pow(p1.x - p2.x, 2) +
+        Math.pow(p1.y - p2.y, 2) +
+        Math.pow(p1.z - p2.z, 2)
+    );
+  }
+
+  function checkGesture() {
+    if (!template || !currentRef.current) {
+      alert("Missing template or hand!");
+      return;
+    }
+
+    let total = 0;
+
+    for (let i = 0; i < 21; i++) {
+      total += distance(template[i], currentRef.current[i]);
+    }
+
+    const avg = total / 21;
+
+    if (avg < 0.05) {
+      setResult("Correct Gesture ✅");
+    } else {
+      setResult("Try Again ❌");
     }
   }
 
   return (
     <div style={{ textAlign: "center" }}>
-      <h1>AI Sign Detection - Day 2</h1>
+      <h1>Sign Learning Mode</h1>
 
-      <video
-        ref={videoRef}
-        style={{ display: "none" }}
-      />
+      <video ref={videoRef} style={{ display: "none" }} />
 
       <canvas
         ref={canvasRef}
         width="640"
         height="480"
-        style={{
-          border: "2px solid black",
-        }}
+        style={{ border: "2px solid black" }}
       />
+
+      <div style={{ marginTop: "20px" }}>
+        <button onClick={saveTemplate}>Save Gesture</button>
+
+        <button
+          onClick={checkGesture}
+          style={{ marginLeft: "10px" }}
+        >
+          Check Gesture
+        </button>
+      </div>
+
+      <h2>{result}</h2>
     </div>
   );
 }
