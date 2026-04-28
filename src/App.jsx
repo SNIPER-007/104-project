@@ -6,8 +6,9 @@ function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const currentRef = useRef(null); // Live landmarks
-  const [template, setTemplate] = useState(null); // Saved gesture
+  const currentRef = useRef(null);
+  const templateRef = useRef(null); // ✅ FIX: useRef instead of state
+
   const [result, setResult] = useState("");
 
   useEffect(() => {
@@ -38,10 +39,8 @@ function App() {
     camera.start();
   }, []);
 
-  // Normalize landmarks (position invariant)
   function normalize(landmarks) {
-    const base = landmarks[0]; // Wrist
-
+    const base = landmarks[0];
     return landmarks.map((p) => ({
       x: p.x - base.x,
       y: p.y - base.y,
@@ -54,22 +53,13 @@ function App() {
     const ctx = canvas.getContext("2d");
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-    ctx.drawImage(
-      results.image,
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    // 🔴 Draw hand
+    if (results.multiHandLandmarks?.length > 0) {
       const landmarks = results.multiHandLandmarks[0];
-
-      // Store live hand
       currentRef.current = landmarks;
 
-      // Draw points
       for (let i = 0; i < landmarks.length; i++) {
         const x = landmarks[i].x * canvas.width;
         const y = landmarks[i].y * canvas.height;
@@ -80,6 +70,25 @@ function App() {
         ctx.fill();
       }
     }
+
+    // 🟢 DRAW TEMPLATE (NOW WILL WORK)
+    if (templateRef.current) {
+      for (let i = 0; i < templateRef.current.length; i++) {
+        const x = canvas.width / 2 + templateRef.current[i].x * 200;
+        const y = canvas.height / 2 + templateRef.current[i].y * 200;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = "lime";
+        ctx.fill();
+      }
+    } else {
+      // 🟡 debug dot
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, 10, 0, 2 * Math.PI);
+      ctx.fillStyle = "yellow";
+      ctx.fill();
+    }
   }
 
   function saveTemplate() {
@@ -88,10 +97,9 @@ function App() {
       return;
     }
 
-    // Normalize before saving
     const norm = normalize(currentRef.current);
 
-    setTemplate(norm);
+    templateRef.current = norm; // ✅ FIX HERE
     setResult("Template Saved ✅");
   }
 
@@ -104,24 +112,22 @@ function App() {
   }
 
   function checkGesture() {
-    if (!template || !currentRef.current) {
+    if (!templateRef.current || !currentRef.current) {
       alert("Missing template or hand!");
       return;
     }
 
-    // Normalize live hand
     const normCurrent = normalize(currentRef.current);
 
     let total = 0;
 
     for (let i = 0; i < 21; i++) {
-      total += distance(template[i], normCurrent[i]);
+      total += distance(templateRef.current[i], normCurrent[i]);
     }
 
     const avg = total / 21;
 
-    // Flexible threshold
-    if (avg < 0.12) {
+    if (avg < 0.20) {
       setResult("Correct Gesture ✅");
     } else {
       setResult("Try Again ❌");
@@ -138,13 +144,11 @@ function App() {
         ref={canvasRef}
         width="640"
         height="480"
-        style={{ border: "2px solid black" }}
+        style={{ border: "3px solid black" }}
       />
 
       <div style={{ marginTop: "20px" }}>
-        <button onClick={saveTemplate}>
-          Save Gesture
-        </button>
+        <button onClick={saveTemplate}>Save Gesture</button>
 
         <button
           onClick={checkGesture}
@@ -155,6 +159,8 @@ function App() {
       </div>
 
       <h2>{result}</h2>
+
+      <p>Template: {templateRef.current ? "Saved" : "Not Saved"}</p>
     </div>
   );
 }
