@@ -1,23 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
 import { Camera } from "@mediapipe/camera_utils";
+import templates from "./templates.json";
 
 import {
   drawConnectors,
   drawLandmarks,
 } from "@mediapipe/drawing_utils";
 
+import { lessons } from "./lessonData";
+
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
+  // LIVE HANDS
   const currentRef = useRef([]);
-  const templateRef = useRef(null);
 
-  const [result, setResult] = useState("");
-  const [accuracy, setAccuracy] = useState(0);
-  const [templateHand, setTemplateHand] =
+  // TEMPLATE
+  const templateRef = useRef([]);
+
+  const [accuracy, setAccuracy] =
+    useState(0);
+
+  const [correct, setCorrect] =
+    useState(false);
+
+  const [result, setResult] =
     useState("");
+
+  const [currentLessonIndex, setCurrentLessonIndex] =
+    useState(0);
+
+  const currentLesson =
+    lessons[currentLessonIndex];
+
+  // =========================
+  // MEDIAPIPE
+  // =========================
 
   useEffect(() => {
     const hands = new Hands({
@@ -37,7 +57,9 @@ function App() {
     const camera = new Camera(videoRef.current, {
       onFrame: async () => {
         if (videoRef.current) {
-          await hands.send({ image: videoRef.current });
+          await hands.send({
+            image: videoRef.current,
+          });
         }
       },
       width: 1920,
@@ -45,9 +67,26 @@ function App() {
     });
 
     camera.start();
-  }, []);
 
-  // Normalize landmarks
+    generateTemplate();
+  }, [currentLessonIndex]);
+
+  // =========================
+  // TEMPLATE GENERATOR
+  // =========================
+
+function generateTemplate() {
+  const letter = currentLesson.label;
+
+  if (templates[letter]) {
+    templateRef.current = templates[letter];
+  }
+}
+
+  // =========================
+  // NORMALIZE
+  // =========================
+
   function normalize(landmarks) {
     const base = landmarks[0];
 
@@ -58,177 +97,9 @@ function App() {
     }));
   }
 
-  function onResults(results) {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // MIRROR CAMERA
-    ctx.save();
-
-    ctx.scale(-1, 1);
-
-    ctx.drawImage(
-      results.image,
-      -canvas.width,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-    ctx.restore();
-
-    // MULTIPLE HANDS
-    if (
-      results.multiHandLandmarks &&
-      results.multiHandedness
-    ) {
-      currentRef.current = [];
-
-      for (
-        let i = 0;
-        i < results.multiHandLandmarks.length;
-        i++
-      ) {
-        const landmarks =
-          results.multiHandLandmarks[i];
-
-        // FIX SELFIE LABELS
-        let handedness =
-          results.multiHandedness[i].label;
-
-        handedness =
-          handedness === "Left"
-            ? "Right"
-            : "Left";
-
-        currentRef.current.push({
-          landmarks,
-          handedness,
-        });
-
-        // COLORS
-        const lineColor =
-          handedness === "Left"
-            ? "#ff3b3b"
-            : "#0099ff";
-
-        const pointColor =
-          handedness === "Left"
-            ? "#ffd700"
-            : "#00ff99";
-
-        // MIRROR HAND DRAWING
-        const mirroredLandmarks =
-          landmarks.map((p) => ({
-            x: 1 - p.x,
-            y: p.y,
-            z: p.z,
-          }));
-
-        // DRAW HAND
-        drawConnectors(
-          ctx,
-          mirroredLandmarks,
-          HAND_CONNECTIONS,
-          {
-            color: lineColor,
-            lineWidth: 4,
-          }
-        );
-
-        drawLandmarks(ctx, mirroredLandmarks, {
-          color: pointColor,
-          radius: 5,
-        });
-
-        // HAND LABEL
-        const x =
-          mirroredLandmarks[0].x *
-          canvas.width;
-
-        const y =
-          mirroredLandmarks[0].y *
-          canvas.height;
-
-        ctx.font = "bold 28px Arial";
-        ctx.fillStyle = "white";
-
-        ctx.fillText(
-          handedness + " Hand",
-          x,
-          y - 25
-        );
-      }
-    }
-
-    // TEMPLATE HAND
-    if (templateRef.current) {
-      const templateLandmarks =
-        templateRef.current.landmarks.map(
-          (p) => ({
-            // FIX MIRRORED TEMPLATE
-            x: 0.82 - p.x * 0.28,
-            y: 0.30 + p.y * 0.28,
-            z: p.z,
-          })
-        );
-
-      drawConnectors(
-        ctx,
-        templateLandmarks,
-        HAND_CONNECTIONS,
-        {
-          color: "#00ffff",
-          lineWidth: 5,
-        }
-      );
-
-      drawLandmarks(ctx, templateLandmarks, {
-        color: "white",
-        radius: 7,
-      });
-
-      // TEMPLATE LABEL
-      ctx.font = "bold 28px Arial";
-      ctx.fillStyle = "#00ffff";
-
-      ctx.fillText(
-        `Template (${templateHand} Hand)`,
-        canvas.width - 500,
-        50
-      );
-    }
-  }
-
-  function saveTemplate() {
-    if (currentRef.current.length === 0) {
-      alert("No hand detected!");
-      return;
-    }
-
-    const selectedHand =
-      currentRef.current[0];
-
-    const norm = normalize(
-      selectedHand.landmarks
-    );
-
-    templateRef.current = {
-      landmarks: norm,
-      handedness:
-        selectedHand.handedness,
-    };
-
-    setTemplateHand(
-      selectedHand.handedness
-    );
-
-    setResult(
-      `Template Saved (${selectedHand.handedness} Hand) ✅`
-    );
-  }
+  // =========================
+  // DISTANCE
+  // =========================
 
   function distance(p1, p2) {
     return Math.sqrt(
@@ -238,40 +109,34 @@ function App() {
     );
   }
 
-  function checkGesture() {
+  // =========================
+  // ACCURACY CHECK
+  // =========================
+
+  function checkLearningAccuracy(
+    currentLandmarks
+  ) {
     if (
       !templateRef.current ||
-      currentRef.current.length === 0
+      templateRef.current.length === 0
     ) {
-      alert("Missing template or hand!");
       return;
     }
 
-    // FIND SAME HAND
-    const matchingHand =
-      currentRef.current.find(
-        (h) =>
-          h.handedness ===
-          templateRef.current.handedness
-      );
+    const normCurrent =
+      normalize(currentLandmarks);
 
-    if (!matchingHand) {
-      setResult(
-        `Show ${templateRef.current.handedness} Hand ❌`
+    const normTemplate =
+      normalize(
+        templateRef.current
       );
-      return;
-    }
-
-    const normCurrent = normalize(
-      matchingHand.landmarks
-    );
 
     let total = 0;
 
     for (let i = 0; i < 21; i++) {
       total += distance(
-        templateRef.current.landmarks[i],
-        normCurrent[i]
+        normCurrent[i],
+        normTemplate[i]
       );
     }
 
@@ -286,10 +151,332 @@ function App() {
 
     setAccuracy(score);
 
-    if (avg < 0.12) {
-      setResult("Correct Gesture ✅");
-    } else {
-      setResult("Try Again ❌");
+    // SUCCESS
+    if (score >= 60 && !correct) {
+      setCorrect(true);
+
+      setResult(
+        "Correct Gesture ✅"
+      );
+
+    
+      setTimeout(() => {
+        setCorrect(false);
+
+        if (
+          currentLessonIndex <
+          lessons.length - 1
+        ) {
+          setCurrentLessonIndex(
+            (prev) => prev + 1
+          );
+
+          generateTemplate();
+        }
+      }, 1500);
+    }
+  }
+
+  // =========================
+  // MAIN DETECTION
+  // =========================
+
+  function onResults(results) {
+    const canvas = canvasRef.current;
+
+    const ctx =
+      canvas.getContext("2d");
+
+    ctx.clearRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    // =========================
+    // MIRROR CAMERA
+    // =========================
+
+    ctx.save();
+
+    ctx.scale(-1, 1);
+
+    ctx.drawImage(
+      results.image,
+      -canvas.width,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    ctx.restore();
+
+    // =========================
+    // USER HANDS
+    // =========================
+
+    if (
+      results.multiHandLandmarks &&
+      results.multiHandedness
+    ) {
+      currentRef.current = [];
+
+      for (
+        let i = 0;
+        i < results.multiHandLandmarks.length;
+        i++
+      ) {
+        const landmarks =
+          results.multiHandLandmarks[i];
+
+        // FIX SELFIE MODE
+        let handedness =
+          results.multiHandedness[i].label;
+
+        handedness =
+          handedness === "Left"
+            ? "Right"
+            : "Left";
+
+        currentRef.current.push({
+          landmarks,
+          handedness,
+        });
+
+        // ACCURACY
+        checkLearningAccuracy(
+          landmarks
+        );
+
+        // COLORS
+        const lineColor =
+          handedness === "Left"
+            ? "#ff3b3b"
+            : "#0099ff";
+
+        const pointColor =
+          handedness === "Left"
+            ? "#ffd700"
+            : "#00ff99";
+
+        // MIRROR USER HAND
+        const mirroredLandmarks =
+          landmarks.map((p) => ({
+            x: 1 - p.x,
+            y: p.y,
+            z: p.z,
+          }));
+
+        // DRAW USER HAND
+        drawConnectors(
+          ctx,
+          mirroredLandmarks,
+          HAND_CONNECTIONS,
+          {
+            color: lineColor,
+            lineWidth: 4,
+          }
+        );
+
+        drawLandmarks(
+          ctx,
+          mirroredLandmarks,
+          {
+            color: pointColor,
+            radius: 6,
+          }
+        );
+
+        // HAND LABEL
+        const x =
+          mirroredLandmarks[0].x *
+          canvas.width;
+
+        const y =
+          mirroredLandmarks[0].y *
+          canvas.height;
+
+        ctx.font =
+          "bold 30px Arial";
+
+        ctx.fillStyle =
+          "white";
+
+        ctx.fillText(
+          handedness + " Hand",
+          x,
+          y - 30
+        );
+      }
+    }
+
+    // =========================
+    // HOLOGRAPHIC TEMPLATE
+    // =========================
+
+    if (
+      templateRef.current &&
+      templateRef.current.length > 0
+    ) {
+      const templateLandmarks =
+        templateRef.current.map(
+          (p) => ({
+            x:
+              0.84 -
+              p.x * 0.42,
+
+            y:
+              0.12 +
+              p.y * 0.42,
+
+            z: p.z,
+          })
+        );
+
+      // GLOW
+      ctx.shadowColor =
+        "#00ffff";
+
+      ctx.shadowBlur = 25;
+
+      // MAIN CONNECTORS
+      drawConnectors(
+        ctx,
+        templateLandmarks,
+        HAND_CONNECTIONS,
+        {
+          color:
+            "rgba(0,255,255,0.9)",
+          lineWidth: 16,
+        }
+      );
+
+      // INNER GLOW
+      drawConnectors(
+        ctx,
+        templateLandmarks,
+        HAND_CONNECTIONS,
+        {
+          color:
+            "rgba(255,255,255,0.35)",
+          lineWidth: 8,
+        }
+      );
+
+      // JOINTS
+      drawLandmarks(
+        ctx,
+        templateLandmarks,
+        {
+          color: "#ffffff",
+          radius: 12,
+        }
+      );
+
+      // PALM GLOW
+      const palm =
+        templateLandmarks[0];
+
+      const palmX =
+        palm.x * canvas.width;
+
+      const palmY =
+        palm.y * canvas.height;
+
+      const gradient =
+        ctx.createRadialGradient(
+          palmX,
+          palmY,
+          10,
+          palmX,
+          palmY,
+          120
+        );
+
+      gradient.addColorStop(
+        0,
+        "rgba(0,255,255,0.5)"
+      );
+
+      gradient.addColorStop(
+        1,
+        "rgba(0,255,255,0)"
+      );
+
+      ctx.fillStyle = gradient;
+
+      ctx.beginPath();
+
+      ctx.arc(
+        palmX,
+        palmY,
+        120,
+        0,
+        2 * Math.PI
+      );
+
+      ctx.fill();
+
+      // RESET SHADOW
+      ctx.shadowBlur = 0;
+
+      // TEMPLATE LABEL
+      ctx.font =
+        "bold 42px Arial";
+
+      ctx.fillStyle =
+        "#00ffff";
+
+      ctx.fillText(
+        `Learn ${currentLesson.label}`,
+        canvas.width - 580,
+        70
+      );
+
+      // GUIDE LABEL
+      ctx.font =
+        "bold 28px Arial";
+
+      ctx.fillStyle =
+        "#ffffff";
+
+      ctx.fillText(
+        "Holographic Guide",
+        canvas.width - 580,
+        120
+      );
+
+      // TEMPLATE BOX
+      ctx.strokeStyle =
+        "rgba(0,255,255,0.5)";
+
+      ctx.lineWidth = 4;
+
+      ctx.strokeRect(
+        canvas.width - 700,
+        40,
+        620,
+        700
+      );
+    }
+
+    // =========================
+    // SUCCESS TICK
+    // =========================
+
+    if (correct) {
+      ctx.font =
+        "bold 160px Arial";
+
+      ctx.fillStyle =
+        "#22c55e";
+
+      ctx.fillText(
+        "✓",
+        canvas.width / 2 - 60,
+        180
+      );
     }
   }
 
@@ -315,7 +502,8 @@ function App() {
           maxWidth: "100%",
           background:
             "rgba(255,255,255,0.05)",
-          backdropFilter: "blur(12px)",
+          backdropFilter:
+            "blur(12px)",
           border:
             "1px solid rgba(255,255,255,0.1)",
           borderRadius: "28px",
@@ -338,7 +526,7 @@ function App() {
               color: "#00ffff",
             }}
           >
-            AI Sign Language Learning System
+            Learn Indian Sign Language
           </h1>
 
           <p
@@ -347,14 +535,17 @@ function App() {
               fontSize: "18px",
             }}
           >
-            Real-time sign language learning
-            using MediaPipe & AI
+            AI-powered guided
+            sign learning using
+            MediaPipe
           </p>
         </div>
 
         <video
           ref={videoRef}
-          style={{ display: "none" }}
+          style={{
+            display: "none",
+          }}
         />
 
         {/* MAIN CONTENT */}
@@ -362,8 +553,10 @@ function App() {
           style={{
             display: "flex",
             gap: "25px",
-            alignItems: "flex-start",
-            justifyContent: "center",
+            alignItems:
+              "flex-start",
+            justifyContent:
+              "center",
             flexWrap: "wrap",
           }}
         >
@@ -381,7 +574,8 @@ function App() {
                 maxWidth: "1000px",
                 boxShadow:
                   "0 0 30px rgba(0,255,255,0.4)",
-                background: "black",
+                background:
+                  "black",
               }}
             />
           </div>
@@ -392,83 +586,73 @@ function App() {
               flex: 1,
               minWidth: "300px",
               display: "flex",
-              flexDirection: "column",
+              flexDirection:
+                "column",
               gap: "20px",
             }}
           >
-            {/* CONTROLS */}
+            {/* CURRENT LETTER */}
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
                 padding: "20px",
-                borderRadius: "18px",
+                borderRadius:
+                  "18px",
               }}
             >
               <h3
                 style={{
-                  color: "#00ffff",
-                  marginBottom: "15px",
+                  color:
+                    "#ff66ff",
                 }}
               >
-                Controls
+                Current Letter
               </h3>
 
-              <div
+              <h1
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "15px",
+                  fontSize:
+                    "72px",
                 }}
               >
-                <button
-                  onClick={saveTemplate}
-                  style={{
-                    padding: "15px",
-                    borderRadius: "14px",
-                    border: "none",
-                    background: "#00ffff",
-                    color: "black",
-                    fontSize: "16px",
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  Save Gesture
-                </button>
-
-                <button
-                  onClick={checkGesture}
-                  style={{
-                    padding: "15px",
-                    borderRadius: "14px",
-                    border: "none",
-                    background: "#22c55e",
-                    color: "white",
-                    fontSize: "16px",
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  Check Gesture
-                </button>
-              </div>
+                {
+                  currentLesson.label
+                }
+              </h1>
             </div>
 
-            {/* RESULT */}
+            {/* STATUS */}
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
                 padding: "20px",
-                borderRadius: "18px",
+                borderRadius:
+                  "18px",
               }}
             >
-              <h3 style={{ color: "#00ffff" }}>
-                Result
+              <h3
+                style={{
+                  color:
+                    "#00ffff",
+                }}
+              >
+                Status
               </h3>
 
-              <p>{result || "Waiting..."}</p>
+              <p
+                style={{
+                  fontSize:
+                    "24px",
+                  fontWeight:
+                    "bold",
+                }}
+              >
+                {correct
+                  ? "✅ Correct"
+                  : "⏳ Copy Template"}
+              </p>
             </div>
 
             {/* ACCURACY */}
@@ -477,31 +661,87 @@ function App() {
                 background:
                   "rgba(255,255,255,0.08)",
                 padding: "20px",
-                borderRadius: "18px",
+                borderRadius:
+                  "18px",
               }}
             >
-              <h3 style={{ color: "#22c55e" }}>
+              <h3
+                style={{
+                  color:
+                    "#22c55e",
+                }}
+              >
                 Accuracy
               </h3>
 
-              <p>{accuracy}%</p>
+              <h1
+                style={{
+                  fontSize:
+                    "48px",
+                }}
+              >
+                {accuracy}%
+              </h1>
             </div>
 
-            {/* HANDS */}
+            {/* PROGRESS */}
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
                 padding: "20px",
-                borderRadius: "18px",
+                borderRadius:
+                  "18px",
               }}
             >
-              <h3 style={{ color: "#facc15" }}>
-                Hands Detected
+              <h3
+                style={{
+                  color:
+                    "#facc15",
+                }}
+              >
+                Progress
+              </h3>
+
+              <h2>
+                {currentLessonIndex +
+                  1}{" "}
+                /{" "}
+                {
+                  lessons.length
+                }
+              </h2>
+            </div>
+
+            {/* HAND GUIDE */}
+            <div
+              style={{
+                background:
+                  "rgba(255,255,255,0.08)",
+                padding: "20px",
+                borderRadius:
+                  "18px",
+              }}
+            >
+              <h3
+                style={{
+                  color:
+                    "#00ffff",
+                }}
+              >
+                Hand Colors
               </h3>
 
               <p>
-                {currentRef.current.length}
+                🔴 Left Hand
+              </p>
+
+              <p>
+                🔵 Right Hand
+              </p>
+
+              <p>
+                💠 Cyan = Template
               </p>
             </div>
           </div>

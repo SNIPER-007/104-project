@@ -22,3 +22,18 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# DATASETS
+dataset/
+
+# ML MODELS
+*.pkl
+
+# NODE MODULES
+node_modules/
+
+# VITE
+dist/
+
+# MAC
+.DS_Store
