@@ -20,20 +20,37 @@ function App() {
   // TEMPLATE
   const templateRef = useRef([]);
 
+  // HARD LOCK
+  const transitionLock =
+    useRef(false);
+
   const [accuracy, setAccuracy] =
     useState(0);
 
   const [correct, setCorrect] =
     useState(false);
 
-  const [result, setResult] =
-    useState("");
+  const [showTick, setShowTick] =
+    useState(false);
 
   const [currentLessonIndex, setCurrentLessonIndex] =
     useState(0);
 
   const currentLesson =
-    lessons[currentLessonIndex];
+    lessons[
+      Math.min(
+        currentLessonIndex,
+        lessons.length - 1
+      )
+    ];
+
+  // =========================
+  // LOAD TEMPLATE
+  // =========================
+
+  useEffect(() => {
+    generateTemplate();
+  }, [currentLessonIndex]);
 
   // =========================
   // MEDIAPIPE
@@ -62,26 +79,28 @@ function App() {
           });
         }
       },
-      width: 1920,
-      height: 1080,
+
+      // OPTIMIZED
+      width: 1280,
+      height: 720,
     });
 
     camera.start();
-
-    generateTemplate();
-  }, [currentLessonIndex]);
+  }, []);
 
   // =========================
-  // TEMPLATE GENERATOR
+  // GENERATE TEMPLATE
   // =========================
 
-function generateTemplate() {
-  const letter = currentLesson.label;
+  function generateTemplate() {
+    const letter =
+      currentLesson.label;
 
-  if (templates[letter]) {
-    templateRef.current = templates[letter];
+    if (templates[letter]) {
+      templateRef.current =
+        templates[letter];
+    }
   }
-}
 
   // =========================
   // NORMALIZE
@@ -123,6 +142,13 @@ function generateTemplate() {
       return;
     }
 
+    // HARD LOCK
+    if (
+      transitionLock.current
+    ) {
+      return;
+    }
+
     const normCurrent =
       normalize(currentLandmarks);
 
@@ -151,29 +177,55 @@ function generateTemplate() {
 
     setAccuracy(score);
 
+    // =========================
     // SUCCESS
-    if (score >= 60 && !correct) {
+    // =========================
+
+    if (score >= 65) {
+
+      // LOCK IMMEDIATELY
+      transitionLock.current =
+        true;
+
       setCorrect(true);
 
-      setResult(
-        "Correct Gesture ✅"
-      );
+      setShowTick(true);
 
-    
+      // WAIT
       setTimeout(() => {
+
+        // NEXT LETTER
+        setCurrentLessonIndex(
+          (prev) => {
+
+            // STOP AT Z
+            if (
+              prev >=
+              lessons.length - 1
+            ) {
+              return prev;
+            }
+
+            return prev + 1;
+          }
+        );
+
+        // RESET
         setCorrect(false);
 
-        if (
-          currentLessonIndex <
-          lessons.length - 1
-        ) {
-          setCurrentLessonIndex(
-            (prev) => prev + 1
-          );
+        setShowTick(false);
 
-          generateTemplate();
-        }
-      }, 1500);
+        setAccuracy(0);
+
+        // COOLDOWN
+        setTimeout(() => {
+
+          transitionLock.current =
+            false;
+
+        }, 1200);
+
+      }, 2000);
     }
   }
 
@@ -182,7 +234,11 @@ function generateTemplate() {
   // =========================
 
   function onResults(results) {
-    const canvas = canvasRef.current;
+
+    const canvas =
+      canvasRef.current;
+
+    if (!canvas) return;
 
     const ctx =
       canvas.getContext("2d");
@@ -224,15 +280,20 @@ function generateTemplate() {
 
       for (
         let i = 0;
-        i < results.multiHandLandmarks.length;
+        i <
+        results.multiHandLandmarks
+          .length;
         i++
       ) {
         const landmarks =
-          results.multiHandLandmarks[i];
+          results
+            .multiHandLandmarks[i];
 
         // FIX SELFIE MODE
         let handedness =
-          results.multiHandedness[i].label;
+          results
+            .multiHandedness[i]
+            .label;
 
         handedness =
           handedness === "Left"
@@ -290,45 +351,53 @@ function generateTemplate() {
 
         // HAND LABEL
         const x =
-          mirroredLandmarks[0].x *
+          mirroredLandmarks[0]
+            .x *
           canvas.width;
 
         const y =
-          mirroredLandmarks[0].y *
+          mirroredLandmarks[0]
+            .y *
           canvas.height;
 
         ctx.font =
-          "bold 30px Arial";
+          "bold 28px Arial";
 
         ctx.fillStyle =
           "white";
 
         ctx.fillText(
-          handedness + " Hand",
+          handedness +
+            " Hand",
           x,
-          y - 30
+          y - 25
         );
       }
     }
 
     // =========================
-    // HOLOGRAPHIC TEMPLATE
+    // TEMPLATE OVERLAY
     // =========================
 
     if (
       templateRef.current &&
-      templateRef.current.length > 0
+      templateRef.current.length >
+        0
     ) {
+
+      // MIRRORED TEMPLATE
       const templateLandmarks =
         templateRef.current.map(
           (p) => ({
             x:
-              0.84 -
-              p.x * 0.42,
+              0.5 -
+              (p.x - 0.5) *
+                0.9,
 
             y:
-              0.12 +
-              p.y * 0.42,
+              0.5 +
+              (p.y - 0.5) *
+                0.9,
 
             z: p.z,
           })
@@ -338,9 +407,22 @@ function generateTemplate() {
       ctx.shadowColor =
         "#00ffff";
 
-      ctx.shadowBlur = 25;
+      ctx.shadowBlur = 30;
 
-      // MAIN CONNECTORS
+      // OUTER GLOW
+      drawConnectors(
+        ctx,
+        templateLandmarks,
+        HAND_CONNECTIONS,
+        {
+          color:
+            "rgba(0,255,255,0.25)",
+
+          lineWidth: 22,
+        }
+      );
+
+      // INNER HAND
       drawConnectors(
         ctx,
         templateLandmarks,
@@ -348,19 +430,8 @@ function generateTemplate() {
         {
           color:
             "rgba(0,255,255,0.9)",
-          lineWidth: 16,
-        }
-      );
 
-      // INNER GLOW
-      drawConnectors(
-        ctx,
-        templateLandmarks,
-        HAND_CONNECTIONS,
-        {
-          color:
-            "rgba(255,255,255,0.35)",
-          lineWidth: 8,
+          lineWidth: 10,
         }
       );
 
@@ -369,59 +440,16 @@ function generateTemplate() {
         ctx,
         templateLandmarks,
         {
-          color: "#ffffff",
-          radius: 12,
+          color:
+            "rgba(255,255,255,0.95)",
+
+          radius: 10,
         }
       );
 
-      // PALM GLOW
-      const palm =
-        templateLandmarks[0];
-
-      const palmX =
-        palm.x * canvas.width;
-
-      const palmY =
-        palm.y * canvas.height;
-
-      const gradient =
-        ctx.createRadialGradient(
-          palmX,
-          palmY,
-          10,
-          palmX,
-          palmY,
-          120
-        );
-
-      gradient.addColorStop(
-        0,
-        "rgba(0,255,255,0.5)"
-      );
-
-      gradient.addColorStop(
-        1,
-        "rgba(0,255,255,0)"
-      );
-
-      ctx.fillStyle = gradient;
-
-      ctx.beginPath();
-
-      ctx.arc(
-        palmX,
-        palmY,
-        120,
-        0,
-        2 * Math.PI
-      );
-
-      ctx.fill();
-
-      // RESET SHADOW
       ctx.shadowBlur = 0;
 
-      // TEMPLATE LABEL
+      // GUIDE TEXT
       ctx.font =
         "bold 42px Arial";
 
@@ -429,54 +457,65 @@ function generateTemplate() {
         "#00ffff";
 
       ctx.fillText(
-        `Learn ${currentLesson.label}`,
-        canvas.width - 580,
-        70
+        `Copy Sign: ${currentLesson.label}`,
+        40,
+        60
       );
 
-      // GUIDE LABEL
       ctx.font =
-        "bold 28px Arial";
+        "bold 24px Arial";
 
       ctx.fillStyle =
-        "#ffffff";
+        "white";
 
       ctx.fillText(
-        "Holographic Guide",
-        canvas.width - 580,
-        120
-      );
-
-      // TEMPLATE BOX
-      ctx.strokeStyle =
-        "rgba(0,255,255,0.5)";
-
-      ctx.lineWidth = 4;
-
-      ctx.strokeRect(
-        canvas.width - 700,
+        "Match your hand with hologram",
         40,
-        620,
-        700
+        100
       );
     }
 
     // =========================
-    // SUCCESS TICK
+    // SUCCESS ANIMATION
     // =========================
 
-    if (correct) {
+    if (showTick) {
+
+      ctx.shadowColor =
+        "#22c55e";
+
+      ctx.shadowBlur = 40;
+
+      // CIRCLE
+      ctx.beginPath();
+
+      ctx.arc(
+        canvas.width / 2,
+        canvas.height / 2,
+        120,
+        0,
+        2 * Math.PI
+      );
+
+      ctx.fillStyle =
+        "rgba(34,197,94,0.25)";
+
+      ctx.fill();
+
+      // TICK
       ctx.font =
-        "bold 160px Arial";
+        "bold 180px Arial";
 
       ctx.fillStyle =
         "#22c55e";
 
       ctx.fillText(
         "✓",
-        canvas.width / 2 - 60,
-        180
+        canvas.width / 2 - 70,
+        canvas.height / 2 + 60
       );
+
+      ctx.shadowBlur = 0;
     }
   }
 
@@ -487,52 +526,79 @@ function generateTemplate() {
         width: "100%",
         background:
           "linear-gradient(to bottom right, #050816, #0f172a, #111827)",
+
         color: "white",
+
         display: "flex",
-        justifyContent: "center",
+
+        justifyContent:
+          "center",
+
         alignItems: "center",
+
         padding: "20px",
-        boxSizing: "border-box",
+
+        boxSizing:
+          "border-box",
+
         fontFamily: "Arial",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: "100%",
+
           background:
             "rgba(255,255,255,0.05)",
+
           backdropFilter:
             "blur(12px)",
+
           border:
             "1px solid rgba(255,255,255,0.1)",
+
           borderRadius: "28px",
+
           padding: "25px",
+
           boxShadow:
             "0 0 40px rgba(0,255,255,0.15)",
         }}
       >
         {/* HEADER */}
+
         <div
           style={{
-            marginBottom: "25px",
-            textAlign: "center",
+            marginBottom:
+              "25px",
+
+            textAlign:
+              "center",
           }}
         >
           <h1
             style={{
-              fontSize: "42px",
-              marginBottom: "10px",
-              color: "#00ffff",
+              fontSize:
+                "42px",
+
+              marginBottom:
+                "10px",
+
+              color:
+                "#00ffff",
             }}
           >
-            Learn Indian Sign Language
+            Learn Indian Sign
+            Language
           </h1>
 
           <p
             style={{
-              color: "#cbd5e1",
-              fontSize: "18px",
+              color:
+                "#cbd5e1",
+
+              fontSize:
+                "18px",
             }}
           >
             AI-powered guided
@@ -548,32 +614,45 @@ function generateTemplate() {
           }}
         />
 
-        {/* MAIN CONTENT */}
+        {/* MAIN */}
+
         <div
           style={{
             display: "flex",
+
             gap: "25px",
+
             alignItems:
               "flex-start",
+
             justifyContent:
               "center",
+
             flexWrap: "wrap",
           }}
         >
           {/* CAMERA */}
+
           <div style={{ flex: 3 }}>
             <canvas
               ref={canvasRef}
-              width="1920"
-              height="1080"
+              width="1280"
+              height="720"
               style={{
                 border:
                   "4px solid #00ffff",
-                borderRadius: "24px",
+
+                borderRadius:
+                  "24px",
+
                 width: "100%",
-                maxWidth: "1000px",
+
+                maxWidth:
+                  "1000px",
+
                 boxShadow:
                   "0 0 30px rgba(0,255,255,0.4)",
+
                 background:
                   "black",
               }}
@@ -581,22 +660,31 @@ function generateTemplate() {
           </div>
 
           {/* RIGHT PANEL */}
+
           <div
             style={{
               flex: 1,
-              minWidth: "300px",
+
+              minWidth:
+                "300px",
+
               display: "flex",
+
               flexDirection:
                 "column",
+
               gap: "20px",
             }}
           >
-            {/* CURRENT LETTER */}
+            {/* LETTER */}
+
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
+
                 padding: "20px",
+
                 borderRadius:
                   "18px",
               }}
@@ -623,11 +711,14 @@ function generateTemplate() {
             </div>
 
             {/* STATUS */}
+
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
+
                 padding: "20px",
+
                 borderRadius:
                   "18px",
               }}
@@ -645,22 +736,26 @@ function generateTemplate() {
                 style={{
                   fontSize:
                     "24px",
+
                   fontWeight:
                     "bold",
                 }}
               >
                 {correct
                   ? "✅ Correct"
-                  : "⏳ Copy Template"}
+                  : "⏳ Learning"}
               </p>
             </div>
 
             {/* ACCURACY */}
+
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
+
                 padding: "20px",
+
                 borderRadius:
                   "18px",
               }}
@@ -685,11 +780,14 @@ function generateTemplate() {
             </div>
 
             {/* PROGRESS */}
+
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
+
                 padding: "20px",
+
                 borderRadius:
                   "18px",
               }}
@@ -713,12 +811,15 @@ function generateTemplate() {
               </h2>
             </div>
 
-            {/* HAND GUIDE */}
+            {/* GUIDE */}
+
             <div
               style={{
                 background:
                   "rgba(255,255,255,0.08)",
+
                 padding: "20px",
+
                 borderRadius:
                   "18px",
               }}
@@ -741,7 +842,8 @@ function generateTemplate() {
               </p>
 
               <p>
-                💠 Cyan = Template
+                💠 Cyan =
+                Template
               </p>
             </div>
           </div>
