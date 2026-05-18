@@ -25,7 +25,7 @@ function Translate() {
 
   const MIN_CONFIDENCE = 60;
 
-  const STABLE_FRAMES_REQUIRED = 12;
+  const STABLE_FRAMES_REQUIRED = 4;
 
   // =========================
   // REFS
@@ -46,24 +46,29 @@ function Translate() {
   const compareCooldownRef =
     useRef(false);
 
+  const translatingRef =
+    useRef(false);
+
+  // ✅ FINAL FIXES
+
+  const stableFramesRef =
+    useRef(0);
+
+  const lastLetterRef =
+    useRef("");
+
   // =========================
   // STATES
   // =========================
 
   const [prediction, setPrediction] =
-    useState("");
+    useState("-");
 
   const [confidence, setConfidence] =
     useState(0);
 
   const [sentence, setSentence] =
     useState("");
-
-  const [lastLetter, setLastLetter] =
-    useState("");
-
-  const [stableFrames, setStableFrames] =
-    useState(0);
 
   const [captureCooldown, setCaptureCooldown] =
     useState(false);
@@ -190,7 +195,7 @@ function Translate() {
 
     if (
       predictionBuffer.current
-        .length > 10
+        .length > 8
     ) {
       predictionBuffer.current.shift();
     }
@@ -220,7 +225,7 @@ function Translate() {
   }
 
   // =========================
-  // FIND BEST MATCH
+  // FIND MATCH
   // =========================
 
   function findBestMatch(
@@ -231,21 +236,19 @@ function Translate() {
         landmarks
       );
 
-    let bestLetter = "";
+    let bestLetter = "-";
 
     let bestScore = 0;
 
     Object.keys(templates).forEach(
       (letter) => {
-        // FIX TEMPLATE STRUCTURE
-
         const template =
-          templates[letter]
-            ?.landmarks;
+          templates[letter];
 
         if (
-          !template ||
-          template.length === 0
+          !Array.isArray(
+            template
+          )
         ) {
           return;
         }
@@ -304,7 +307,7 @@ function Translate() {
   }
 
   // =========================
-  // PROCESS PREDICTION
+  // PROCESS
   // =========================
 
   function processPrediction(
@@ -335,29 +338,32 @@ function Translate() {
       result.confidence
     );
 
-    // STABILITY
+    // ✅ FIXED FRAME COUNTING
 
     if (
-      smooth === lastLetter
+      smooth ===
+      lastLetterRef.current
     ) {
-      setStableFrames(
-        (prev) => prev + 1
-      );
+      stableFramesRef.current += 1;
     } else {
-      setLastLetter(smooth);
+      lastLetterRef.current =
+        smooth;
 
-      setStableFrames(0);
+      stableFramesRef.current = 0;
     }
 
-    // CAPTURE LETTER
+    // =========================
+    // CAPTURE
+    // =========================
 
     if (
+      smooth !== "-" &&
       result.confidence >=
         MIN_CONFIDENCE &&
-      stableFrames >=
+      stableFramesRef.current >=
         STABLE_FRAMES_REQUIRED &&
       !cooldownRef.current &&
-      isTranslating
+      translatingRef.current
     ) {
       cooldownRef.current =
         true;
@@ -366,10 +372,15 @@ function Translate() {
         true
       );
 
-      setSentence(
-        (prev) =>
-          prev + smooth
-      );
+      // ✅ APPEND LETTER
+
+      setSentence((prev) => {
+        return (
+          prev +
+          smooth +
+          " "
+        );
+      });
 
       setTranslationCount(
         (prev) => prev + 1
@@ -378,7 +389,10 @@ function Translate() {
       predictionBuffer.current =
         [];
 
-      setStableFrames(0);
+      stableFramesRef.current = 0;
+
+      lastLetterRef.current =
+        "";
 
       setTimeout(() => {
         cooldownRef.current =
@@ -387,7 +401,7 @@ function Translate() {
         setCaptureCooldown(
           false
         );
-      }, 1400);
+      }, 1200);
     }
 
     setTimeout(() => {
@@ -420,7 +434,7 @@ function Translate() {
       canvas.height
     );
 
-    // MIRROR CAMERA
+    // MIRROR VIDEO
 
     ctx.save();
 
@@ -449,8 +463,6 @@ function Translate() {
       return;
     }
 
-    // HAND FOUND
-
     setHandPresent(true);
 
     const landmarks =
@@ -462,7 +474,7 @@ function Translate() {
         .multiHandedness[0]
         .label;
 
-    // FIX MIRRORED SELFIE LABELS
+    // FIX MIRROR
 
     handedness =
       handedness === "Left"
@@ -483,7 +495,7 @@ function Translate() {
         ? "#00ffff"
         : "#22c55e";
 
-    // DRAW CONNECTIONS
+    // DRAW
 
     drawConnectors(
       ctx,
@@ -495,8 +507,6 @@ function Translate() {
         lineWidth: 4,
       }
     );
-
-    // DRAW LANDMARKS
 
     drawLandmarks(
       ctx,
@@ -527,7 +537,9 @@ function Translate() {
 
     // PROCESS
 
-    if (isTranslating) {
+    if (
+      translatingRef.current
+    ) {
       processPrediction(
         landmarks
       );
@@ -551,20 +563,28 @@ function Translate() {
   }
 
   // =========================
-  // START / STOP
+  // TOGGLE
   // =========================
 
   function toggleTranslation() {
     // START
 
-    if (!isTranslating) {
+    if (
+      !translatingRef.current
+    ) {
+      translatingRef.current =
+        true;
+
       setSentence("");
 
-      setPrediction("");
+      setPrediction("-");
 
       setConfidence(0);
 
-      setStableFrames(0);
+      stableFramesRef.current = 0;
+
+      lastLetterRef.current =
+        "";
 
       setTranslationCount(0);
 
@@ -581,6 +601,9 @@ function Translate() {
     }
 
     // STOP
+
+    translatingRef.current =
+      false;
 
     setIsTranslating(false);
 
@@ -671,7 +694,8 @@ function Translate() {
       <video
         ref={videoRef}
         style={{
-          display: "none",
+          display:
+            "none",
         }}
       />
 
@@ -766,9 +790,7 @@ function Translate() {
         >
           <StatsCard
             title="Detected"
-            value={
-              prediction || "-"
-            }
+            value={prediction}
             subtitle={`Confidence: ${confidence}%`}
             color="#00ffff"
             large
@@ -805,7 +827,7 @@ function Translate() {
                 ? "Active"
                 : "Stopped"
             }
-            subtitle={`Frames: ${stableFrames}`}
+            subtitle={`Frames: ${stableFramesRef.current}`}
             color="#facc15"
           />
 
@@ -816,8 +838,6 @@ function Translate() {
             }
             color="#00ffff"
           />
-
-          {/* BUTTON */}
 
           <button
             onClick={

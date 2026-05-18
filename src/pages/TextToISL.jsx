@@ -45,6 +45,13 @@ function TextToISL() {
       const loadedTemplates =
         await loadTemplates();
 
+      console.log(
+        "TEMPLATES:",
+        Object.keys(
+          loadedTemplates
+        )
+      );
+
       setTemplates(
         loadedTemplates
       );
@@ -353,21 +360,62 @@ function TextToISL() {
 
           {/* TEMPLATE */}
 
-          <HandCanvas
-            landmarks={
-              templates[
-                currentLetter
-              ]
-            }
+          {templates[
+            currentLetter
+          ]?.landmarks ? (
+            <HandCanvas
+              landmarks={
+                templates[
+                  currentLetter
+                ]?.landmarks ||
+                []
+              }
 
-            width={320}
+              width={320}
 
-            height={320}
+              height={320}
 
-            mirrored={true}
+              mirrored={true}
 
-            title="ISL Gesture"
-          />
+              title="ISL Gesture"
+            />
+          ) : (
+            <div
+              style={{
+                width: "320px",
+
+                height: "320px",
+
+                borderRadius:
+                  "22px",
+
+                background:
+                  "rgba(255,255,255,0.08)",
+
+                display: "flex",
+
+                justifyContent:
+                  "center",
+
+                alignItems:
+                  "center",
+
+                color:
+                  "#ff3b3b",
+
+                fontSize:
+                  "22px",
+
+                fontWeight:
+                  "bold",
+
+                border:
+                  "2px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              No Template Found
+            </div>
+          )}
         </div>
 
         {/* RIGHT PANEL */}
